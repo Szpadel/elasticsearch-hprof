@@ -37,6 +37,47 @@ impl<'a> ElasticsearchMemory<'a> {
         queries
     }
 
+    fn read_composite_chunk(&self, item: &JavaInstance, buffer: &mut String) -> Result<(), ()> {
+        let fields: AHashMap<_, _> = item.local_fields(&self.profile).collect();
+
+        let bytes = fields.get("bytes").and_then(|b| {
+            if let JavaLocalValue::PrimitiveArray(arr) = b.value(&self.profile) {
+                Some(arr)
+            } else {
+                None
+            }
+        });
+        let offset = fields.get("offset").and_then(|o| {
+            if let JavaLocalValue::Int(o) = o.value(&self.profile) {
+                Some(o)
+            } else {
+                None
+            }
+        });
+        let length = fields.get("length").and_then(|l| {
+            if let JavaLocalValue::Int(l) = l.value(&self.profile) {
+                Some(l)
+            } else {
+                None
+            }
+        });
+
+        if let (Some(bytes), Some(offset), Some(length)) = (bytes, offset, length) {
+            if let PrimitiveArrayValues::Byte(bytes) = bytes.values() {
+                let offset = offset as usize;
+                let length = length as usize;
+                let parsed = bytes[offset..offset + length]
+                    .iter()
+                    .map(|&i| i as u8)
+                    .collect::<Vec<_>>();
+                let str = String::from_utf8_lossy(&parsed);
+                buffer.push_str(str.borrow());
+                return Ok(());
+            }
+        }
+        Err(())
+    }
+
     fn read_composite_bytes(&self, instance: &JavaInstance) -> Option<String> {
         if let Some(refs_value) = instance
             .local_fields(&self.profile)
@@ -45,43 +86,13 @@ impl<'a> ElasticsearchMemory<'a> {
             if let JavaLocalValue::ObjectArray(refs) = refs_value.value(&self.profile) {
                 let mut buffer = String::new();
                 for item in refs.values(&self.profile).flatten() {
-                    let fields: AHashMap<_, _> = item.local_fields(&self.profile).collect();
-
-                    let bytes = fields.get("bytes").and_then(|b| {
-                        if let JavaLocalValue::PrimitiveArray(arr) = b.value(&self.profile) {
-                            Some(arr)
-                        } else {
-                            None
-                        }
-                    });
-                    let offset = fields.get("offset").and_then(|o| {
-                        if let JavaLocalValue::Int(o) = o.value(&self.profile) {
-                            Some(o)
-                        } else {
-                            None
-                        }
-                    });
-                    let length = fields.get("length").and_then(|l| {
-                        if let JavaLocalValue::Int(l) = l.value(&self.profile) {
-                            Some(l)
-                        } else {
-                            None
-                        }
-                    });
-
-                    if let (Some(bytes), Some(offset), Some(length)) = (bytes, offset, length) {
-                        if let PrimitiveArrayValues::Byte(bytes) = bytes.values() {
-                            let offset = offset as usize;
-                            let length = length as usize;
-                            let parsed = bytes[offset..offset + length]
-                                .iter()
-                                .map(|&i| i as u8)
-                                .collect::<Vec<_>>();
-                            let str = String::from_utf8_lossy(&parsed);
-                            buffer.push_str(str.borrow());
-                        }
-                    }
+                    self.read_composite_chunk(&item, &mut buffer).ok();
                 }
+                return Some(buffer);
+            }
+        } else {
+            let mut buffer = String::new();
+            if let Ok(_) = self.read_composite_chunk(&instance, &mut buffer) {
                 return Some(buffer);
             }
         }

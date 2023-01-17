@@ -17,6 +17,7 @@ pub enum JavaLocalValue<'a> {
     Null,
 }
 
+#[derive(Debug)]
 pub struct JavaFieldValue<'a> {
     name: &'a str,
     field: FieldValue,

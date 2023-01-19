@@ -26,6 +26,10 @@ impl<'a> JavaPrimitiveArray<'a> {
         self.array.obj_id().into()
     }
 
+    pub fn value_type(&self) -> &str {
+        self.array.primitive_type().java_type_name()
+    }
+
     pub fn values(&self) -> PrimitiveArrayValues {
         match self.array.primitive_type() {
             PrimitiveArrayType::Boolean => PrimitiveArrayValues::Boolean(

@@ -27,6 +27,7 @@ pub struct JavaProfile<'a> {
     load_classes: AHashMap<ClassId, LoadClass>,
     strings: AHashMap<StringId, &'a str>,
     classes: AHashMap<ClassId, JavaClass<'a>>,
+    class_id_index: AHashMap<String, ClassId>,
     objects: AHashMap<ObjectId, Object<'a>>,
     class_instance_map: AHashMap<ClassId, Vec<ObjectId>>,
 }
@@ -39,6 +40,7 @@ impl<'a> JavaProfile<'a> {
             load_classes: Default::default(),
             strings: Default::default(),
             classes: Default::default(),
+            class_id_index: Default::default(),
             objects: Default::default(),
             class_instance_map: Default::default(),
         }
@@ -100,9 +102,28 @@ impl<'a> JavaProfile<'a> {
                 _ => {}
             }
         }
+        self.build_index();
+    }
+
+    fn build_index(&mut self) {
+        let mut class_id_index = AHashMap::new();
+        for (id, class) in self.classes() {
+            class_id_index.insert(class.name(self).to_string(), *id);
+        }
+        self.class_id_index = class_id_index;
     }
 
     pub fn classes(&self) -> hash_map::Iter<ClassId, JavaClass> {
         self.classes.iter()
+    }
+
+    pub fn get_class_by_name(&self, class_name: &str) -> Option<&JavaClass> {
+        self.class_id_index
+            .get(class_name)
+            .and_then(|class_id| self.get_class_by_id(class_id))
+    }
+
+    pub fn get_class_by_id(&self, class_id: &ClassId) -> Option<&JavaClass> {
+        self.classes.get(class_id)
     }
 }

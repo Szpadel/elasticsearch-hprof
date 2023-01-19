@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use jvm_hprof::heap_dump::FieldValue;
 
 use super::{JavaInstance, JavaObjectArray, JavaPrimitiveArray, JavaProfile, Object};
@@ -15,6 +17,33 @@ pub enum JavaLocalValue<'a> {
     Int(i32),
     Long(i64),
     Null,
+}
+
+impl<'a> JavaLocalValue<'a> {
+    pub fn type_name(&'a self, profile: &'a JavaProfile) -> Cow<str> {
+        match self {
+            JavaLocalValue::Object(o) => o
+                .class(profile)
+                .map(|c| c.name(profile))
+                .unwrap_or("Object")
+                .into(),
+            JavaLocalValue::ObjectArray(oa) => {
+                format!("{}[]", oa.class_name(profile).unwrap_or("unknown")).into()
+            }
+            JavaLocalValue::PrimitiveArray(a) => format!("{}[]", a.value_type()).into(),
+            JavaLocalValue::Boolean(b) => {
+                format!("bool({})", if *b { "true" } else { "false" }).into()
+            }
+            JavaLocalValue::Char(ch) => format!("char({ch})").into(),
+            JavaLocalValue::Float(f) => format!("float({f})").into(),
+            JavaLocalValue::Double(d) => format!("double({d})").into(),
+            JavaLocalValue::Byte(b) => format!("byte({b})").into(),
+            JavaLocalValue::Short(s) => format!("short({s})").into(),
+            JavaLocalValue::Int(i) => format!("int({i})").into(),
+            JavaLocalValue::Long(l) => format!("l({l})").into(),
+            JavaLocalValue::Null => "null".into(),
+        }
+    }
 }
 
 #[derive(Debug)]

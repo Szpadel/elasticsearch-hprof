@@ -1,6 +1,6 @@
 use jvm_hprof::heap_dump::{NullableIds, ObjectArray};
 
-use super::{JavaInstance, JavaProfile, Object, ObjectId};
+use super::{ClassId, JavaInstance, JavaProfile, Object, ObjectId};
 
 pub struct JavaObjectArrayIterator<'a> {
     profile: &'a JavaProfile<'a>,
@@ -45,5 +45,15 @@ impl<'a> JavaObjectArray<'a> {
 
     pub fn values(&self, profile: &'a JavaProfile) -> JavaObjectArrayIterator {
         JavaObjectArrayIterator::new(profile, &self.array)
+    }
+
+    pub fn class_id(&self) -> ClassId {
+        ClassId::from(self.array.array_class_obj_id())
+    }
+
+    pub fn class_name(&self, profile: &'a JavaProfile) -> Option<&str> {
+        profile
+            .get_class_by_id(&self.class_id())
+            .map(|c| c.name(profile))
     }
 }

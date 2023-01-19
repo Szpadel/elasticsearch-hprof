@@ -1,8 +1,11 @@
-use std::borrow::Borrow;
-
-use ahash::AHashMap;
+use anyhow::{anyhow, Context};
 
 use crate::hprof::*;
+
+const HTTP_REQUEST_CLASS: &str = "org/elasticsearch/http/netty4/Netty4HttpRequest";
+const COMPOSITE_BYTES_REFERENCE_CLASS: &str =
+    "org/elasticsearch/common/bytes/CompositeBytesReference";
+const BYTES_ARRAY_CLASS: &str = "org/elasticsearch/common/bytes/BytesArray";
 
 pub struct ElasticsearchMemory<'a> {
     profile: JavaProfile<'a>,
@@ -11,24 +14,36 @@ pub struct ElasticsearchMemory<'a> {
 impl<'a> ElasticsearchMemory<'a> {
     pub fn new(mmap: &'a [u8]) -> Self {
         let mut profile = JavaProfile::new(mmap);
+        log::debug!("Processing profile...");
         profile.process();
         Self { profile }
     }
 
     pub fn read_inflight_queries(&self) -> Vec<String> {
         let mut queries = Vec::new();
-        if let Some((_, class)) = self.profile.classes().find(|(_id, class)| {
-            class.name(&self.profile) == "org/elasticsearch/http/netty4/Netty4HttpRequest"
-        }) {
-            for instance in class.instances(&self.profile) {
-                if let Some(content_value) = instance
-                    .local_fields(&self.profile)
-                    .find(|f| f.name() == "content")
+        if let Some(class) = self.profile.get_class_by_name(HTTP_REQUEST_CLASS) {
+            for http_request in class.instances(&self.profile) {
+                log::debug!("Located HttpRequest {}", http_request.id());
+                if let Some(i) = http_request
+                    .fields(&self.profile)
+                    .value::<&JavaInstance>(&self.profile, "released")
                 {
-                    if let JavaLocalValue::Object(content) = content_value.value(&self.profile) {
-                        if let Some(query) = self.read_composite_bytes(content) {
+                    if i.fields(&self.profile).value(&self.profile, "value") == Some(1i32) {
+                        log::debug!("Request released, skipping");
+                        continue;
+                    }
+                }
+                self.debug_instance(http_request);
+                match self.read_request_data(http_request) {
+                    Ok(query) => {
+                        if query.is_empty() {
+                            log::warn!("Extracted query is empty, skipping");
+                        } else {
                             queries.push(query);
                         }
+                    }
+                    Err(err) => {
+                        log::error!("Failed to read query from request: {:#}", err)
                     }
                 }
             }
@@ -37,65 +52,98 @@ impl<'a> ElasticsearchMemory<'a> {
         queries
     }
 
-    fn read_composite_chunk(&self, item: &JavaInstance, buffer: &mut String) -> Result<(), ()> {
-        let fields: AHashMap<_, _> = item.local_fields(&self.profile).collect();
+    fn read_request_data(&self, http_request: &'a JavaInstance) -> anyhow::Result<String> {
+        let fields = http_request.fields(&self.profile);
+        let content: &JavaInstance = fields
+            .value(&self.profile, "content")
+            .ok_or(anyhow!("content not found"))?;
 
-        let bytes = fields.get("bytes").and_then(|b| {
-            if let JavaLocalValue::PrimitiveArray(arr) = b.value(&self.profile) {
-                Some(arr)
-            } else {
-                None
-            }
-        });
-        let offset = fields.get("offset").and_then(|o| {
-            if let JavaLocalValue::Int(o) = o.value(&self.profile) {
-                Some(o)
-            } else {
-                None
-            }
-        });
-        let length = fields.get("length").and_then(|l| {
-            if let JavaLocalValue::Int(l) = l.value(&self.profile) {
-                Some(l)
-            } else {
-                None
-            }
-        });
-
-        if let (Some(bytes), Some(offset), Some(length)) = (bytes, offset, length) {
-            if let PrimitiveArrayValues::Byte(bytes) = bytes.values() {
-                let offset = offset as usize;
-                let length = length as usize;
-                let parsed = bytes[offset..offset + length]
-                    .iter()
-                    .map(|&i| i as u8)
-                    .collect::<Vec<_>>();
-                let str = String::from_utf8_lossy(&parsed);
-                buffer.push_str(str.borrow());
-                return Ok(());
-            }
+        match content
+            .class(&self.profile)
+            .map(|c| c.name(&self.profile))
+            .unwrap_or("unknown")
+        {
+            COMPOSITE_BYTES_REFERENCE_CLASS => self.read_composite_bytes(content),
+            BYTES_ARRAY_CLASS => self.read_bytes_array(content),
+            class_name => Err(anyhow!("Unknown content class {class_name}")),
         }
-        Err(())
     }
 
-    fn read_composite_bytes(&self, instance: &JavaInstance) -> Option<String> {
-        if let Some(refs_value) = instance
-            .local_fields(&self.profile)
-            .find(|f| f.name() == "references")
-        {
-            if let JavaLocalValue::ObjectArray(refs) = refs_value.value(&self.profile) {
-                let mut buffer = String::new();
-                for item in refs.values(&self.profile).flatten() {
-                    self.read_composite_chunk(&item, &mut buffer).ok();
-                }
-                return Some(buffer);
-            }
+    fn read_bytes_array(&self, instance: &'a JavaInstance) -> anyhow::Result<String> {
+        self.debug_instance(instance);
+        let fields = instance.fields(&self.profile);
+        let bytes: &JavaPrimitiveArray = fields
+            .value(&self.profile, "bytes")
+            .ok_or(anyhow!("bytes not found"))?;
+
+        let offset: i32 = fields
+            .value(&self.profile, "offset")
+            .ok_or(anyhow!("offset not found"))?;
+
+        let length: i32 = fields
+            .value(&self.profile, "length")
+            .ok_or(anyhow!("length not found"))?;
+
+        if let PrimitiveArrayValues::Byte(bytes) = bytes.values() {
+            let offset = offset as usize;
+            let length = length as usize;
+            let parsed = bytes[offset..offset + length]
+                .iter()
+                .map(|&i| i as u8)
+                .collect::<Vec<_>>();
+            let str = String::from_utf8_lossy(&parsed);
+            Ok(str.to_string())
         } else {
-            let mut buffer = String::new();
-            if let Ok(_) = self.read_composite_chunk(&instance, &mut buffer) {
-                return Some(buffer);
+            Err(anyhow!("Expected array of bytes"))
+        }
+    }
+
+    fn read_composite_bytes(&self, composite_bytes: &JavaInstance) -> anyhow::Result<String> {
+        self.debug_instance(composite_bytes);
+        let fields = composite_bytes.fields(&self.profile);
+        let references: &JavaObjectArray = fields
+            .value(&self.profile, "references")
+            .ok_or(anyhow!("failed to read references"))?;
+
+        let references_class_name = references.class_name(&self.profile).unwrap_or("unknown");
+
+        if references_class_name != BYTES_ARRAY_CLASS {
+            log::warn!("Expected {BYTES_ARRAY_CLASS}, found {references_class_name}. Trying anyways, but it'll likely not succeed");
+        }
+
+        let query = references
+            .values(&self.profile)
+            .filter_map(|i| {
+                if let Some(i) = i {
+                    Some(
+                        self.read_bytes_array(i)
+                            .context("Failed read bytes array instance"),
+                    )
+                } else {
+                    log::warn!("Could not read chunk request fragment! Expect corrupted query");
+                    None
+                }
+            })
+            .collect::<anyhow::Result<Vec<String>>>()?
+            .join("");
+
+        Ok(query)
+    }
+
+    fn debug_instance(&self, instance: &JavaInstance) {
+        if log::log_enabled!(log::Level::Trace) {
+            log::trace!(
+                "Instance {} {} fields:",
+                instance.name(&self.profile).unwrap_or("unknown"),
+                instance.id()
+            );
+            let fields = instance.fields(&self.profile);
+            for (name, field) in fields.fields {
+                log::trace!(
+                    "{name}: {}",
+                    field.value(&self.profile).type_name(&self.profile)
+                );
             }
         }
-        None
     }
 }

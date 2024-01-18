@@ -106,8 +106,11 @@ impl<'a> ElasticsearchMemory<'a> {
             .ok_or(anyhow!("failed to read references"))?;
 
         let references_class_name = references.class_name(&self.profile).unwrap_or("unknown");
-
-        if references_class_name != BYTES_ARRAY_CLASS {
+        if self
+            .profile
+            .is_subclass_by_name(references_class_name, BYTES_ARRAY_CLASS)
+            .unwrap_or(false)
+        {
             log::warn!("Expected {BYTES_ARRAY_CLASS}, found {references_class_name}. Trying anyways, but it'll likely not succeed");
         }
 

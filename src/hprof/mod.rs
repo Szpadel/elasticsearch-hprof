@@ -126,4 +126,22 @@ impl<'a> JavaProfile<'a> {
     pub fn get_class_by_id(&self, class_id: &ClassId) -> Option<&JavaClass> {
         self.classes.get(class_id)
     }
+
+    /// Checks if the class with the given `child_id` is a subclass of the class with the given `parent_id`.\
+    /// Returns `None` if either class is not found.
+    pub fn is_subclass(&self, child_id: ClassId, parent_id: ClassId) -> Option<bool> {
+        let mut class_id = Some(child_id);
+        while class_id != Some(parent_id) && class_id.is_some() {
+            let class = self.get_class_by_id(&class_id?)?;
+            class_id = class.parent_class();
+        }
+
+        Some(class_id == Some(parent_id))
+    }
+
+    pub fn is_subclass_by_name(&self, child_name: &str, parent_name: &str) -> Option<bool> {
+        let child_id = self.get_class_by_name(child_name)?.id();
+        let parent_id = self.get_class_by_name(parent_name)?.id();
+        self.is_subclass(child_id, parent_id)
+    }
 }

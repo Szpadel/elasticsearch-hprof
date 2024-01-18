@@ -46,4 +46,8 @@ impl<'a> JavaClass<'a> {
     pub fn instance_field_descriptors(&self) -> FieldDescriptors {
         self.class.instance_field_descriptors()
     }
+
+    pub fn parent_class(&self) -> Option<ClassId> {
+        self.class.super_class_obj_id().map(ClassId::from)
+    }
 }

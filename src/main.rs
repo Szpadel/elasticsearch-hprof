@@ -16,6 +16,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    #[clap(alias = "inflight_queries")]
     InflightQueries(InflightQueries),
 }
 
@@ -23,13 +24,13 @@ enum Commands {
 #[command(about = "Read queries that was inflight in the time of crash\n\
     At least one of --print or --save is required")]
 struct InflightQueries {
-    #[arg(required_unless_present("save"), long, help = "Save queries to file")]
-    print: bool,
     #[arg(
         required_unless_present("print"),
         long,
         help = "Print queries to console"
     )]
+    print: bool,
+    #[arg(required_unless_present("save"), long, help = "Save queries to files, one per query, directory named <hprof_filename>.prof will be created")]
     save: bool,
     #[arg(help = "Location of .hprof file from elasticsearch OOM dump")]
     hprof: PathBuf,

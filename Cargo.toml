@@ -1,6 +1,6 @@
 [package]
 name = "elasticsearch-hprof"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2018"
 description = "Elasticsearch hprof memory dump reader"
 authors = [

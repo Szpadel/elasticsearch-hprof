@@ -25,12 +25,16 @@ enum Commands {
     At least one of --print or --save is required")]
 struct InflightQueries {
     #[arg(
-        required_unless_present("print"),
+        required_unless_present("save"),
         long,
         help = "Print queries to console"
     )]
     print: bool,
-    #[arg(required_unless_present("save"), long, help = "Save queries to files, one per query, directory named <hprof_filename>.prof will be created")]
+    #[arg(
+        required_unless_present("print"),
+        long,
+        help = "Save queries to files, one per query, directory named <hprof_filename>.prof will be created"
+    )]
     save: bool,
     #[arg(help = "Location of .hprof file from elasticsearch OOM dump")]
     hprof: PathBuf,

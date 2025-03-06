@@ -2,6 +2,8 @@ mod elasticsearch;
 mod hprof;
 
 use std::path::PathBuf;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use anyhow::*;
 use clap::{Args, Parser, Subcommand};
@@ -70,19 +72,44 @@ fn main() {
 }
 
 fn open_hprof_file(path: &PathBuf) -> Result<std::fs::File> {
-    let mut attempts = 0;
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("Failed to access file at {:?}", path))?;
+
+    if metadata.len() > 0 {
+        return std::fs::File::open(path)
+            .with_context(|| format!("Failed to open file at {:?}", path));
+    }
+    log::info!(
+            "File at {:?} is empty, waiting for content...",
+            path
+        );
+
+    let start_time = Instant::now();
+    let mut last_size = 0;
+
     loop {
-        if attempts > 30 {
-            bail!("File is still 0 bytes after 30 attempts");
+        thread::sleep(Duration::from_secs(30));
+
+        let metadata = std::fs::metadata(path)
+            .with_context(|| format!("Failed to access file at {:?}", path))?;
+        let current_size = metadata.len();
+        let elapsed = start_time.elapsed();
+
+        if current_size == 0 && elapsed > Duration::from_secs(15 * 60) {
+            return Err(anyhow::anyhow!(
+                "Timeout after {:?} waiting for file to have content",
+                elapsed
+            ));
         }
-        let file = std::fs::File::open(path).context("Failed to open hprof file")?;
-        let metadata = file.metadata().context("Failed to get file metadata")?;
-        if metadata.len() > 0 {
-            return Ok(file);
+        if current_size != last_size {
+            log::info!("File size changed: {} -> {} bytes", last_size, current_size);
+            last_size = current_size;
+            continue;
         }
-        log::info!("File is still 0 bytes, waiting 30s...");
-        std::thread::sleep(std::time::Duration::from_secs(30));
-        attempts += 1;
+        if current_size > 0{
+            return std::fs::File::open(path)
+                .with_context(|| format!("Failed to open file at {:?}", path));
+        }
     }
 }
 

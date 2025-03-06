@@ -1,0 +1,47 @@
+[package]
+name = "jvm-hprof"
+description = "A parser for JVM hprof heap dumps"
+version = "0.1.0"
+authors = ["Marshall Pierce <marshall@mpierce.org>"]
+edition = "2018"
+keywords = ["jvm", "hprof"]
+license-file = "LICENSE.txt"
+categories = ["development-tools", "parser-implementations"]
+repository = "https://bitbucket.org/marshallpierce/jvm-hprof-rs/src/master/"
+
+[dependencies]
+# parsing
+nom = "5.1.1"
+# generate getters
+getset = "0.0.9"
+# iterating over enum variants
+strum_macros = "0.20.1"
+strum = "0.20.0"
+
+[dev-dependencies]
+memmap = "0.7.0"
+chrono = "0.4.10"
+itertools = "0.8.2"
+base64 = "0.11.0"
+clap = "2.33.0"
+escaper = "0.1.0"
+csv = "1.1.5"
+anyhow = "1.0.36"
+rayon = "1.5.0"
+num_cpus = "1.13.0"
+rand = "0.8.0"
+tempfile = "3.1.0"
+is_sorted = "0.1.1"
+
+# index
+lmdb-rkv = "0.14.0"
+
+# heap profiling
+#dhat = "0.2.1"
+
+[[example]]
+name = "analyze_hprof"
+
+[profile.release]
+# for dhat or other profiling
+debug = 1

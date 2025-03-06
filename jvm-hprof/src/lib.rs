@@ -254,7 +254,11 @@ impl<'a> Iterator for Records<'a> {
                 self.remaining = input;
                 Some(Ok(record))
             }
-            Err(e) => Some(Err(e)),
+            Err(e) => {
+                self.remaining = &[];
+                log::error!("Parsing failed, continuing with incomplete data: {:?}", e);
+                Some(Err(e))
+            }
         }
     }
 }
@@ -383,6 +387,16 @@ impl<'a> Record<'a> {
 
         let (input, micros) = number::be_u32(input)?;
         let (input, len) = number::be_u32(input)?;
+        if len > input.len() as u32 {
+            log::error!(
+                "Incomplete record: {} bytes remaining, but {} expected, file truncated?",
+                input.len(),
+                len
+            );
+            return Err(nom::Err::Incomplete(nom::Needed::Size(
+                len as usize - input.len(),
+            )));
+        }
         let (input, body) = bytes::take(len)(input)?;
 
         Ok((
@@ -685,7 +699,11 @@ impl<'a> Iterator for SubRecords<'a> {
                 self.remaining = input;
                 Some(Ok(record))
             }
-            Err(e) => Some(Err(e)),
+            Err(e) => {
+                log::error!("Parsing failed, continuing with incomplete data: {:?}", e);
+                self.remaining = &[];
+                Some(Err(e))
+            }
         }
     }
 }

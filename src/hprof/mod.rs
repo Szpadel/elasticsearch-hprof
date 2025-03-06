@@ -47,29 +47,39 @@ impl<'a> JavaProfile<'a> {
     }
 
     pub fn process(&mut self) {
+        log::trace!("Starting to process HPROF records");
+        let mut record_num = 1;
         for record in self.hprof.records_iter().flatten() {
+            record_num += 1;
+            if record_num % 1000 == 0 {
+                log::debug!("Processing record {}", record_num);
+            }
             match record.tag() {
                 jvm_hprof::RecordTag::LoadClass => {
                     if let Some(Ok(lc)) = record.as_load_class() {
+                        log::trace!("Processing LoadClass: class_obj_id={:?}", lc.class_obj_id());
                         self.load_classes.insert(lc.class_obj_id().into(), lc);
                     }
                 }
                 jvm_hprof::RecordTag::Utf8 => {
                     if let Some(Ok(string)) = record.as_utf_8() {
-                        self.strings.insert(
-                            string.name_id().into(),
-                            string.text_as_str().unwrap_or("(invalid UTF-8)"),
-                        );
+                        let text = string.text_as_str().unwrap_or("(invalid UTF-8)");
+                        // log::trace!("Processing UTF8 string: id={:?}, text={}", string.name_id(), text);
+                        self.strings.insert(string.name_id().into(), text);
                     }
                 }
                 jvm_hprof::RecordTag::HeapDump | jvm_hprof::RecordTag::HeapDumpSegment => {
+                    log::trace!("Processing heap dump segment");
                     if let Some(Ok(heap)) = record.as_heap_dump_segment() {
                         for sub in heap.sub_records().flatten() {
                             match sub {
                                 jvm_hprof::heap_dump::SubRecord::Class(c) => {
+                                    log::trace!("Processing class: obj_id={:?}", c.obj_id());
                                     self.classes.insert(c.obj_id().into(), JavaClass::new(c));
                                 }
                                 jvm_hprof::heap_dump::SubRecord::Instance(instance) => {
+                                    // log::trace!("Processing instance: obj_id={:?}, class={:?}",
+                                    //               instance.obj_id(), instance.class_obj_id());
                                     match self
                                         .class_instance_map
                                         .entry(instance.class_obj_id().into())
@@ -86,23 +96,37 @@ impl<'a> JavaProfile<'a> {
                                         .insert(instance.id(), Object::Instance(instance));
                                 }
                                 jvm_hprof::heap_dump::SubRecord::ObjectArray(obj_array) => {
+                                    // log::trace!("Processing object array: obj_id={:?}",
+                                    //               obj_array.obj_id());
                                     let instance = JavaObjectArray::new(obj_array);
                                     self.objects.insert(instance.id(), Object::Array(instance));
                                 }
                                 jvm_hprof::heap_dump::SubRecord::PrimitiveArray(pa) => {
+                                    // log::trace!("Processing primitive array: obj_id={:?}",
+                                    //               pa.obj_id());
                                     let instance = JavaPrimitiveArray::new(pa);
                                     self.objects
                                         .insert(instance.id(), Object::PrimitiveArray(instance));
                                 }
-                                _ => {}
+                                _ => {
+                                    log::trace!("Skipping unsupported heap dump sub-record type");
+                                }
                             }
                         }
                     }
                 }
-                _ => {}
+                _ => {
+                    log::trace!("Skipping unsupported record type: {:?}", record.tag());
+                }
             }
         }
+        log::trace!("Building class index");
         self.build_index();
+        log::trace!(
+            "Processing complete: {} classes, {} objects",
+            self.classes.len(),
+            self.objects.len()
+        );
     }
 
     fn build_index(&mut self) {

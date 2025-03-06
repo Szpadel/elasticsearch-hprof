@@ -69,8 +69,25 @@ fn main() {
     // }
 }
 
+fn open_hprof_file(path: &PathBuf) -> Result<std::fs::File> {
+    let mut attempts = 0;
+    loop {
+        if attempts > 30 {
+            bail!("File is still 0 bytes after 30 attempts");
+        }
+        let file = std::fs::File::open(path).context("Failed to open hprof file")?;
+        let metadata = file.metadata().context("Failed to get file metadata")?;
+        if metadata.len() > 0 {
+            return Ok(file);
+        }
+        log::info!("File is still 0 bytes, waiting 30s...");
+        std::thread::sleep(std::time::Duration::from_secs(30));
+        attempts += 1;
+    }
+}
+
 fn inflight_queries(opts: &InflightQueries) -> Result<()> {
-    let file = std::fs::File::open(opts.hprof.clone()).context("Failed open hprof file")?;
+    let file = open_hprof_file(&opts.hprof)?;
     let memmap = unsafe { memmap::MmapOptions::new().map(&file) }.context("Failed to mmap file")?;
     log::info!("Loading hprof file...");
     let elastic = ElasticsearchMemory::new(&memmap);

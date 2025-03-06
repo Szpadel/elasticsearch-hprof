@@ -11,27 +11,28 @@ repository = "https://bitbucket.org/marshallpierce/jvm-hprof-rs/src/master/"
 
 [dependencies]
 # parsing
-nom = "5.1.1"
+nom = "5"
 # generate getters
-getset = "0.0.9"
+getset = "0.1"
 # iterating over enum variants
-strum_macros = "0.20.1"
-strum = "0.20.0"
+strum_macros = "0.27"
+strum = "0.27"
+log = "0.4"
 
 [dev-dependencies]
-memmap = "0.7.0"
-chrono = "0.4.10"
-itertools = "0.8.2"
-base64 = "0.11.0"
-clap = "2.33.0"
-escaper = "0.1.0"
-csv = "1.1.5"
-anyhow = "1.0.36"
-rayon = "1.5.0"
-num_cpus = "1.13.0"
-rand = "0.8.0"
-tempfile = "3.1.0"
-is_sorted = "0.1.1"
+memmap = "0.7"
+chrono = "0.4"
+itertools = "0.14"
+base64 = "0.22"
+clap = "4"
+escaper = "0.1"
+csv = "1"
+anyhow = "1"
+rayon = "1"
+num_cpus = "1"
+rand = "0.9"
+tempfile = "3"
+is_sorted = "0.1"
 
 # index
 lmdb-rkv = "0.14.0"
